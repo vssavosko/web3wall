@@ -1,14 +1,20 @@
 import React, { useState, useEffect } from 'react';
 
+import { ethers } from 'ethers';
+
+import abi from './utils/Wall.json';
+
 const App = () => {
   const [currentAccount, setCurrentAccount] = useState('');
+
+  const contractABI = abi.abi;
 
   const checkIfWalletIsConnected = async () => {
     try {
       const { ethereum } = window;
 
       if (!ethereum) {
-        console.log('Make sure you have metamask!');
+        console.error('Make sure you have metamask!');
       } else {
         console.log('We have the ethereum object', ethereum);
       }
@@ -22,7 +28,7 @@ const App = () => {
 
         setCurrentAccount(account);
       } else {
-        console.log('No authorized account found');
+        console.error('No authorized account found');
       }
     } catch (error) {
       console.error(error);
@@ -49,13 +55,49 @@ const App = () => {
     }
   };
 
+  const post = async () => {
+    try {
+      const { ethereum } = window;
+
+      if (ethereum) {
+        const provider = new ethers.providers.Web3Provider(ethereum);
+        const signer = provider.getSigner();
+        const wallContract = new ethers.Contract(
+          process.env.REACT_APP_CONTRACT_ADDRESS,
+          contractABI,
+          signer
+        );
+
+        let count = await wallContract.getTotalPosts();
+
+        console.log('Retrieved total post count...', count.toNumber());
+
+        const wallTxn = await wallContract.post();
+
+        console.log('Mining...', wallTxn.hash);
+
+        await wallTxn.wait();
+
+        console.log('Mined -- ', wallTxn.hash);
+
+        count = await wallContract.getTotalPosts();
+
+        console.log('Retrieved total post count...', count.toNumber());
+      } else {
+        console.error("Ethereum object doesn't exist!");
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
   useEffect(() => {
     checkIfWalletIsConnected();
   }, []);
 
   return (
     <div>
-      <button>Send</button>
+      <button onClick={post}>Create a post</button>
       {!currentAccount && <button onClick={connectWallet}>Connect Wallet</button>}
     </div>
   );
