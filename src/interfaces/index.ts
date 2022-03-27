@@ -1,5 +1,5 @@
 export interface Post {
-  user: string;
+  fromUser: string;
   timestamp: Date;
   message: string;
 }
