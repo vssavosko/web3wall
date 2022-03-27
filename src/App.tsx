@@ -4,7 +4,7 @@ import { Contract } from 'ethers';
 
 import { Post } from 'interfaces';
 
-import { getWallContract } from 'utils/getWallContract';
+import { getWeb3WallContract } from 'utils/getWeb3WallContract';
 
 const App = () => {
   const [currentAccount, setCurrentAccount] = useState('');
@@ -14,12 +14,12 @@ const App = () => {
   const getAllPosts = useCallback(async () => {
     try {
       if (window.ethereum) {
-        const wallContract = getWallContract(window.ethereum);
+        const web3WallContract = getWeb3WallContract(window.ethereum);
 
-        const posts = await wallContract.getAllPosts();
+        const posts = await web3WallContract.getAllPosts();
 
-        const postsCleaned = posts.map(({ user, timestamp, message }: Post) => ({
-          user,
+        const postsCleaned = posts.map(({ fromUser, timestamp, message }: Post) => ({
+          fromUser,
           timestamp: new Date((timestamp as unknown as number) * 1000),
           message,
         }));
@@ -41,8 +41,6 @@ const App = () => {
         console.error('Make sure you have metamask!');
 
         return;
-      } else {
-        console.log('We have the ethereum object', ethereum);
       }
 
       const accounts = await ethereum.request({ method: 'eth_accounts' });
@@ -81,26 +79,26 @@ const App = () => {
     }
   };
 
-  const post = async () => {
+  const createPost = async () => {
     try {
       if (window.ethereum) {
-        const wallContract = getWallContract(window.ethereum);
+        const web3WallContract = getWeb3WallContract(window.ethereum);
 
-        let count = await wallContract.getTotalPosts();
+        let count = await web3WallContract.getTotalPosts();
 
         console.log('Retrieved total post count...', count.toNumber());
 
-        const wallTxn = await wallContract.post(message, { gasLimit: 300000 });
+        const createPostTxn = await web3WallContract.createPost(message, { gasLimit: 300000 });
 
         setMessage('');
 
-        console.log('Mining...', wallTxn.hash);
+        console.log('Mining...', createPostTxn.hash);
 
-        await wallTxn.wait();
+        await createPostTxn.wait();
 
-        console.log('Mined -- ', wallTxn.hash);
+        console.log('Mined -- ', createPostTxn.hash);
 
-        count = await wallContract.getTotalPosts();
+        count = await web3WallContract.getTotalPosts();
 
         console.log('Retrieved total post count...', count.toNumber());
       } else {
@@ -114,7 +112,7 @@ const App = () => {
   const onNewPost = (fromUser: string, timestamp: number, message: string) => {
     setAllPosts((prevState) => [
       {
-        user: fromUser,
+        fromUser,
         timestamp: new Date(timestamp * 1000),
         message,
       },
@@ -131,16 +129,16 @@ const App = () => {
   }, []);
 
   useEffect(() => {
-    let wallContract: Contract;
+    let web3WallContract: Contract;
 
     if (window.ethereum) {
-      wallContract = getWallContract(window.ethereum);
+      web3WallContract = getWeb3WallContract(window.ethereum);
 
-      wallContract.on('NewPost', onNewPost);
+      web3WallContract.on('NewPost', onNewPost);
     }
 
     return () => {
-      if (wallContract) wallContract.off('NewPost', onNewPost);
+      if (web3WallContract) web3WallContract.off('NewPost', onNewPost);
     };
   }, []);
 
@@ -154,12 +152,13 @@ const App = () => {
         {currentAccount && (
           <div>
             <textarea value={message} onChange={onChangeTextArea}></textarea>
-            <button onClick={post}>Create a post</button>
+            <button onClick={createPost}>Create a post</button>
           </div>
         )}
         {!currentAccount && <button onClick={connectWallet}>Connect Wallet</button>}
       </div>
-      {currentAccount && (
+      {!allPosts.length && <p>No posts here yet</p>}
+      {currentAccount && !!allPosts.length && (
         <div>
           <h2>Posts</h2>
           {allPosts.map((post: Post, index: number) => (
@@ -167,7 +166,7 @@ const App = () => {
               key={index}
               style={{ backgroundColor: 'OldLace', marginTop: '16px', padding: '8px' }}
             >
-              <div>Address: {post.user}</div>
+              <div>Address: {post.fromUser}</div>
               <div>Time: {post.timestamp.toString()}</div>
               <div>Message: {post.message}</div>
             </div>
