@@ -1,20 +1,37 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, ChangeEvent } from 'react';
 
-import { ethers } from 'ethers';
+import { Contract } from 'ethers';
 
-import abi from './utils/Wall.json';
+import { Post } from 'interfaces';
 
-interface Post {
-  user: string;
-  timestamp: number;
-  message: string;
-}
+import { getWallContract } from 'utils/getWallContract';
 
 const App = () => {
   const [currentAccount, setCurrentAccount] = useState('');
-  const [allPosts, setAllPosts] = useState([]);
+  const [allPosts, setAllPosts] = useState<Post[]>([]);
+  const [message, setMessage] = useState('');
 
-  const contractABI = abi.abi;
+  const getAllPosts = useCallback(async () => {
+    try {
+      if (window.ethereum) {
+        const wallContract = getWallContract(window.ethereum);
+
+        const posts = await wallContract.getAllPosts();
+
+        const postsCleaned = posts.map(({ user, timestamp, message }: Post) => ({
+          user,
+          timestamp: new Date((timestamp as unknown as number) * 1000),
+          message,
+        }));
+
+        setAllPosts(postsCleaned.reverse());
+      } else {
+        console.error("Ethereum object doesn't exist!");
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  }, []);
 
   const checkIfWalletIsConnected = async () => {
     try {
@@ -22,6 +39,8 @@ const App = () => {
 
       if (!ethereum) {
         console.error('Make sure you have metamask!');
+
+        return;
       } else {
         console.log('We have the ethereum object', ethereum);
       }
@@ -34,8 +53,6 @@ const App = () => {
         console.log('Found an authorized account:', account);
 
         setCurrentAccount(account);
-
-        getAllPosts();
       } else {
         console.error('No authorized account found');
       }
@@ -59,38 +76,6 @@ const App = () => {
       console.log('Connected', accounts[0]);
 
       setCurrentAccount(accounts[0]);
-
-      getAllPosts();
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  const getAllPosts = async () => {
-    try {
-      const { ethereum } = window;
-
-      if (ethereum) {
-        const provider = new ethers.providers.Web3Provider(ethereum);
-        const signer = provider.getSigner();
-        const wallContract = new ethers.Contract(
-          process.env.REACT_APP_CONTRACT_ADDRESS,
-          contractABI,
-          signer
-        );
-
-        const posts = await wallContract.getAllPosts();
-
-        const postsCleaned = posts.map((post: Post) => ({
-          address: post.user,
-          timestamp: new Date(post.timestamp * 1000),
-          message: post.message,
-        }));
-
-        setAllPosts(postsCleaned);
-      } else {
-        console.error("Ethereum object doesn't exist!");
-      }
     } catch (error) {
       console.error(error);
     }
@@ -98,22 +83,16 @@ const App = () => {
 
   const post = async () => {
     try {
-      const { ethereum } = window;
-
-      if (ethereum) {
-        const provider = new ethers.providers.Web3Provider(ethereum);
-        const signer = provider.getSigner();
-        const wallContract = new ethers.Contract(
-          process.env.REACT_APP_CONTRACT_ADDRESS,
-          contractABI,
-          signer
-        );
+      if (window.ethereum) {
+        const wallContract = getWallContract(window.ethereum);
 
         let count = await wallContract.getTotalPosts();
 
         console.log('Retrieved total post count...', count.toNumber());
 
-        const wallTxn = await wallContract.post('A message');
+        const wallTxn = await wallContract.post(message, { gasLimit: 300000 });
+
+        setMessage('');
 
         console.log('Mining...', wallTxn.hash);
 
@@ -132,14 +111,52 @@ const App = () => {
     }
   };
 
+  const onNewPost = (fromUser: string, timestamp: number, message: string) => {
+    setAllPosts((prevState) => [
+      {
+        user: fromUser,
+        timestamp: new Date(timestamp * 1000),
+        message,
+      },
+      ...prevState,
+    ]);
+  };
+
+  const onChangeTextArea = ({ target }: ChangeEvent<{ value: string }>) => {
+    setMessage(target.value);
+  };
+
   useEffect(() => {
     checkIfWalletIsConnected();
   }, []);
 
+  useEffect(() => {
+    let wallContract: Contract;
+
+    if (window.ethereum) {
+      wallContract = getWallContract(window.ethereum);
+
+      wallContract.on('NewPost', onNewPost);
+    }
+
+    return () => {
+      if (wallContract) wallContract.off('NewPost', onNewPost);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (currentAccount) getAllPosts();
+  }, [currentAccount, getAllPosts]);
+
   return (
     <>
       <div>
-        {currentAccount && <button onClick={post}>Create a post</button>}
+        {currentAccount && (
+          <div>
+            <textarea value={message} onChange={onChangeTextArea}></textarea>
+            <button onClick={post}>Create a post</button>
+          </div>
+        )}
         {!currentAccount && <button onClick={connectWallet}>Connect Wallet</button>}
       </div>
       {currentAccount && (
